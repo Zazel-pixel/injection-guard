@@ -269,7 +269,9 @@ def print_replay(rep):
     for name, items in rep["samples"].items():
         print(f"\n  samples: {name}")
         for day, tool, frag in items:
-            print(f"    {day} {tool[:28]:<28} {frag}")
+            # Quoted: the guard reads this output too, and a short quotation
+            # is a citation, not an instruction.
+            print(f"    {day} {tool[:28]:<28} “{frag}”")
 
 
 def main():

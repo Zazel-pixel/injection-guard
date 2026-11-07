@@ -67,8 +67,10 @@ def listing(recs, shown_only):
         for f in r.get("findings", []):
             if shown_only and not f.get("shown"):
                 continue
+            # Quoted, so that reading the log does not raise the alerts again:
+            # the guard treats a short quotation as a citation.
             print(f"{r.get('ts', '')}  {status(f):<6} {f.get('name', '?'):<26} "
-                  f"{r.get('tool', '?')[:20]:<20} {f.get('excerpt', '')}")
+                  f"{r.get('tool', '?')[:20]:<20} “{f.get('excerpt', '')}”")
 
 
 def main():
