@@ -19,6 +19,7 @@ Rule: no change to a pattern without these numbers before and after.
 """
 import argparse
 import collections
+import functools
 import importlib.util
 import json
 import random
@@ -136,19 +137,14 @@ def print_report(res):
 
 # --- Replay of real tool outputs ---------------------------------------------
 
-_ASSIGNED = re.compile(
-    r"(?i)\b(api[_-]?key|secret|token|password|passwd|passphrase|authorization)"
-    r"\b(\s*[:=]\s*|\s+)(\S{4,})")
-_TOKEN = re.compile(
-    r"\b(?:sk-|sk_|ghp_|gho_|ghs_|github_pat_|xox[abposr]-|AKIA|ASIA|AIza|"
-    r"glpat-|hf_)[A-Za-z0-9_\-]{8,}|\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-.]+|"
-    r"\b[A-Za-z0-9+/=_\-]{32,}")
+@functools.cache
+def _this_guard():
+    return load_guard(DEFAULT_GUARD)
 
 
 def redact(text):
-    """Mask anything that looks like a credential before it is printed."""
-    text = _ASSIGNED.sub(lambda m: m.group(1) + m.group(2) + "[REDACTED]", text)
-    return _TOKEN.sub("[REDACTED]", text)
+    """This checkout's redaction, whatever version of the guard is measured."""
+    return _this_guard().redact(text)
 
 
 def _codex_record(rec, names, path):

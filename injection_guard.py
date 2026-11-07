@@ -16,8 +16,10 @@ Two roles, depending on the hook event that calls it:
 Principle: what arrives through a tool is DATA, never an instruction. Only the
 human, in the chat, gives instructions.
 
-Standard library only. No network. Writes nothing but its log.
-Log: ~/.claude/hooks/injection-guard.log (rotated at 1 MB).
+Standard library only. No network. Writes nothing but its log and its state.
+Log: ~/.claude/hooks/injection-guard.jsonl, one JSON line per event with a
+short REDACTED excerpt of each finding (rotated at 1 MB); read it with
+tools/audit_log.py. INJECTION_GUARD_DIR moves the log and the state.
 Switch off for one command: CLAUDE_INJECTION_GUARD=off
 """
 
@@ -33,7 +35,7 @@ from pathlib import Path
 
 STATE_DIR = Path(os.environ.get("INJECTION_GUARD_DIR")
                  or Path.home() / ".claude" / "hooks")
-LOG = STATE_DIR / "injection-guard.log"
+LOG = STATE_DIR / "injection-guard.jsonl"
 SEEN = STATE_DIR / "injection-guard.seen.json"
 MAX_LOG = 1_000_000
 MAX_SCAN = 400_000  # beyond this, only the start and the end are scanned
@@ -527,16 +529,49 @@ def pipe_to_shell_match(cmd):
     return PIPE_TO_SHELL.search(neutralize(cmd))
 
 
-def log(kind, detail):
+# --- Log ---------------------------------------------------------------------
+# Until 2026-11 the log kept pattern names only: whether 1,133 alerts had been
+# real or false could not be told afterwards. It now keeps a short excerpt,
+# redacted first: a log that copied an API key would be a leak of its own.
+
+_ASSIGNED = re.compile(
+    r"(?i)\b(api[_-]?key|secret|token|password|passwd|passphrase|authorization)"
+    r"(['\"]?\s*[:=]\s*['\"]?)(?:bearer\s+|basic\s+)?([^\s'\",;]{3,})")
+_TOKEN = re.compile(
+    r"\b(?:sk-|sk_|pk_|rk_|ghp_|gho_|ghs_|ghu_|github_pat_|xox[abposr]-|AKIA|ASIA|"
+    r"AIza|glpat-|hf_|npm_)[A-Za-z0-9_\-]{8,}|"
+    r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-.]+|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
+    r"\b[A-Za-z0-9+/=_\-]{32,}")
+
+
+def redact(text):
+    """Mask what looks like a credential: assignments, known prefixes, long tokens."""
+    text = _ASSIGNED.sub(lambda m: m.group(1) + m.group(2) + "[REDACTED]", text)
+    return _TOKEN.sub("[REDACTED]", text)
+
+
+def log(event, **fields):
     try:
         LOG.parent.mkdir(parents=True, exist_ok=True)
         if LOG.exists() and LOG.stat().st_size > MAX_LOG:
-            LOG.rename(LOG.with_name("injection-guard.log.1"))
-        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            os.replace(LOG, LOG.with_name(LOG.name + ".1"))
+        record = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "event": event, **fields}
         with LOG.open("a", encoding="utf-8") as fh:
-            fh.write(f"{stamp}\t{kind}\t{detail}\n")
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError:
         pass  # a hook never breaks the session over a logging problem
+
+
+def _agent(data):
+    path = str(data.get("transcript_path") or "")
+    return "codex" if "/.codex/" in path else "claude" if "/.claude/" in path else "?"
+
+
+def _session_tag(session):
+    """A stable tag to group a session's events without storing its id."""
+    return hashlib.sha256(session.encode()).hexdigest()[:10] if session else ""
 
 
 def flatten(value, depth=0):
@@ -664,9 +699,12 @@ def post_tool_use(data):
     findings = scan(body)
     if not findings:
         return 0
-    log("post", f"{tool}\t" + ",".join(f"{n}:{s}" for n, s, _ in findings))
-    findings = _fresh(data.get("session_id", ""),
-                      [f for f in findings if is_shown(f)])
+    session = str(data.get("session_id") or "")
+    shown = _fresh(session, [f for f in findings if is_shown(f)])
+    log("post", tool=tool, agent=_agent(data), session=_session_tag(session),
+        findings=[{"name": n, "severity": s, "shown": (n, s, e) in shown,
+                   "excerpt": redact(e)} for n, s, e in findings])
+    findings = shown
     if not findings:
         return 0
 
@@ -713,7 +751,10 @@ def pre_tool_use(data):
     if not m:
         return 0
 
-    log("pre-block", cmd[:200].replace("\n", " "))
+    log("pre-block", tool="Bash", agent=_agent(data),
+        session=_session_tag(str(data.get("session_id") or "")),
+        pattern=redact(cmd[m.start():m.end()][:120]),
+        command=redact(cmd[:200].replace("\n", " ")))
     sys.stderr.write(
         "INJECTION GUARD — command blocked.\n\n"
         f"Pattern: “{cmd[m.start():m.end()][:120]}”\n\n"
@@ -743,7 +784,8 @@ def main():
         if event == "PreToolUse":
             return pre_tool_use(data)
     except Exception as exc:  # a crashing guard must not block the session
-        log("error", f"{event}: {type(exc).__name__}: {exc}")
+        log("error", where=str(event),
+            error=redact(f"{type(exc).__name__}: {exc}")[:300])
         return 0
     return 0
 
