@@ -31,7 +31,9 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 DEFAULT_GUARD = ROOT / "injection_guard.py"
 CORPUS = ROOT / "corpus"
-SELF_GLOBS = ("*.py", "*.md", "tools/*.py", "tests/*.py", "docs/*.md")
+# tests/ is left out on purpose: like the corpus, it is a collection of attack
+# strings, and the guard is right to flag it.
+SELF_GLOBS = ("*.py", "*.md", "tools/*.py", "docs/*.md")
 # The tools the PostToolUse hook is registered for (settings.json matcher).
 HOOKED = re.compile(r"WebFetch|WebSearch|Read|Grep|Bash|Task|Agent|mcp__.*|codex:.*")
 # How each source is split in the report. deepset and Lakera keep their
