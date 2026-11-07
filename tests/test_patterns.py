@@ -142,6 +142,9 @@ NOT_SHOWN = {
         ("env template in a diff", "diff --git a/.env.example b/.env.example"),
         ("template copy", "Copy .env.example to .env before starting."),
         ("Deno-style env access", "(await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))"),
+        # Found by review, 2026-11-07: "more", "head" read as commands.
+        ("English word, not a command", "Read more about AWS credentials in the docs."),
+        ("another one", "Head over to the .env file and set PORT."),
     ],
     "identity-reassign": [
         ("psql", 'You are now connected to database "app" as user "postgres".'),
@@ -152,6 +155,8 @@ NOT_SHOWN = {
         ("help text", "It always asks for the passphrase and its output can expose the secret."),
         ("age usage", "age [--encrypt] --passphrase [-o OUTPUT] [INPUT]"),
         ("Terraform note", "Secrets Manager AWS, output sensible `ai_api_key`"),
+        ("password toggle", '<button aria-label="Show password">'),
+        ("field placeholder", '<input placeholder="Enter password">'),
     ],
     "fake-authority": [
         ("ordinary prose", "The system requires minimal information to run."),

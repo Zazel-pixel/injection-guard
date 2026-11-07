@@ -138,16 +138,20 @@ PATTERNS = [
         # Command: reading a secret file. The command must stand alone:
         # "process.env", "$.env", "...env" and ".env.example" are not reads
         # of a secret (94 of 170 real alerts).
-        r"(?<![\w.$/-])(?:cat|less|more|head|tail|printenv|env)\s+[^\n|;&]{0,40}?"
+        # (less, more, head and tail were tried: as English words they made
+        # "read more about AWS credentials" a secret read.)
+        r"(?<![\w.$/-])(?:cat|printenv|env)\s+[^\n|;&]{0,40}?"
         + _SECRET_PATHS,
         re.I)),
     ("credential-bait", "medium", re.compile(
         # Verb first: "paste your API key", "reveal the password". Noun first
         # only when the verb points back at it ("the password: type it
         # here"). Noun first with any verb fired on every HTML form, where
-        # name="password" sits next to type="password".
+        # name="password" sits next to type="password". The determiner is
+        # required: without it, the "Show password" toggle and the "Enter
+        # password" placeholder of every login form fired.
         r"\b(?:paste|enter|type|provide|reveal|print|echo|output|show|send|share|"
-        r"give|leak|dump|tell\s+me)\s+(?:(?:your|the|my|its|all|any|our)\s+)?"
+        r"give|leak|dump|tell)\s+(?:me\s+)?(?:your|the|my|its|all|any|our)\s+"
         r"(?:[\w-]+\s+)?(?:api[_\s-]?keys?|secret[_\s-]?keys?|access[_\s-]?tokens?|"
         r"auth[_\s-]?tokens?|passwords?|passphrases?|private[_\s-]?keys?|"
         r"credentials|secrets)\b|"
