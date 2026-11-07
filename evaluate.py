@@ -29,11 +29,11 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_GUARD = ROOT / "prompt-injection-guard.py"
+DEFAULT_GUARD = ROOT / "injection_guard.py"
 CORPUS = ROOT / "corpus"
 SELF_GLOBS = ("*.py", "*.md", "tools/*.py", "tests/*.py", "docs/*.md")
 # The tools the PostToolUse hook is registered for (settings.json matcher).
-HOOKED = re.compile(r"WebFetch|WebSearch|Read|Grep|Bash|Task|Agent|mcp__.*")
+HOOKED = re.compile(r"WebFetch|WebSearch|Read|Grep|Bash|Task|Agent|mcp__.*|codex:.*")
 # How each source is split in the report. deepset and Lakera keep their
 # upstream train/test splits apart: patterns are tuned by reading train
 # examples only, so the test rows stay an honest held-out measure.
@@ -149,6 +149,21 @@ def redact(text):
     return _TOKEN.sub("[REDACTED]", text)
 
 
+def _codex_record(rec, names, path):
+    """Codex rollout files: tool calls and outputs share a call_id."""
+    p = rec.get("payload")
+    if not isinstance(p, dict):
+        return None
+    if p.get("type") in ("function_call", "custom_tool_call"):
+        names[p.get("call_id")] = p.get("name", "?")
+    elif p.get("type") in ("function_call_output", "custom_tool_call_output"):
+        cid = p.get("call_id")
+        # Codex funnels every command through one tool; its hook sees them all.
+        return (cid, "codex:" + names.get(cid, "?"), path.stem,
+                str(rec.get("timestamp", ""))[:10], p.get("output"))
+    return None
+
+
 def tool_outputs(dirs):
     """Yield (tool, session, day, response) for each tool call, once."""
     seen = set()
@@ -157,11 +172,19 @@ def tool_outputs(dirs):
             names = {}
             with path.open(encoding="utf-8", errors="replace") as fh:
                 for line in fh:
-                    if "tool_use" not in line:  # also matches tool_use_id
+                    # "tool_use" also matches tool_use_id (Claude Code);
+                    # "call_id" marks Codex tool calls and their outputs.
+                    if "tool_use" not in line and "call_id" not in line:
                         continue
                     try:
                         rec = json.loads(line)
                     except ValueError:
+                        continue
+                    if rec.get("type") == "response_item":
+                        out = _codex_record(rec, names, path)
+                        if out and out[0] not in seen:
+                            seen.add(out[0])
+                            yield out[1:]
                         continue
                     msg = rec.get("message")
                     content = msg.get("content") if isinstance(msg, dict) else None
