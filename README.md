@@ -10,10 +10,10 @@ It does two things:
 - **After every tool call** (`PostToolUse`), it scans what came back (a web
   page, a file, a command's output, an MCP response) for text that tries to
   pass itself off as an instruction, and tells the agent. It never blocks.
-- **Before every shell command** (`PreToolUse`), it blocks `curl ... | sh` and
-  its variants, the step where fetched content becomes code that runs. It
-  parses shell quoting, so a note that merely *mentions* that command is not
-  blocked.
+- **Before every shell command** (`PreToolUse`), it blocks the common forms
+  of `curl ... | sh`, the step where fetched content becomes code that runs.
+  It parses shell quoting, so a note that merely *mentions* that command is
+  not blocked. Many other forms still get through: see the next section.
 
 ## What it does not catch
 
@@ -29,9 +29,19 @@ Read this before relying on it.
   code block is treated as a citation: logged, not shown (see below). An
   attacker who knows this rule can quote the injection. On the Lakera dataset
   this rule costs 7 prompts out of 1,000.
+- **Many ways around the block.** It stops `curl ... | sh`, `| bash`,
+  `| sudo sh`, `| /bin/sh`, `eval "$(curl ...)"`, `bash -c '... | sh'` and a
+  `python -c` that downloads. An adversarial review found forms that it does
+  not stop, all checked against the current version:
+  `bash -c "$(curl ...)"`, `bash <(curl ...)`, `source <(curl ...)`,
+  ``eval `curl ...` ``, a bare `$(curl ...)`, an intermediate stage
+  (`| tee file | bash`, `| base64 -d | bash`), launchers (`| sudo -E bash`,
+  `| env bash`), other interpreters (`| python3`), PowerShell (`iwr ... | iex`)
+  and downloading to a file, then running it. Closing these is the next piece
+  of work.
 - **Everything after the warning.** The post-tool check only informs the
   agent, which then decides what to do. The only thing actually stopped is
-  piping a download into a shell.
+  piping a download into a shell, in the forms listed above.
 
 It is an alarm for naive injections, not a wall. It complements, and does not
 replace, sandboxing, least-privilege credentials and asking the human before
@@ -79,7 +89,9 @@ output. Over the 85 days before the measurement, 16 alerts remain.
 Known false alarms that remain: documentation that tells a human to "enter
 the password" (the largest group), plain-text instructions to `cat` a secret
 file, a README that says to run a script before going on, and fine-tuning
-templates with an `### Instruction:` heading.
+templates with an `### Instruction:` heading. A quotation is also missed when
+a pattern's match runs past the closing quote, for instance up to a keyword
+just after it.
 
 ## Install
 
