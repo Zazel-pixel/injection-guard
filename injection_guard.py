@@ -58,6 +58,8 @@ CITATION_CHECKS = 50  # matches examined per pattern before giving up
 
 # Files whose content is a secret. ".env" only when it is not glued to a word
 # ("process.env", "$.env", "...env") and not a template (".env.example").
+# "secretvault" is the vault of skm, a local secret broker for coding agents:
+# https://github.com/Zazel-pixel/skm
 _SECRET_PATHS = (
     r"(?:(?<![\w.$])\.env(?!\.(?:example|sample|template|dist)\b)(?:\.[\w-]+)?\b|"
     r"id_rsa|id_ed25519|\.ssh/|credentials\b|\.aws/|secretvault|auth\.json|"
